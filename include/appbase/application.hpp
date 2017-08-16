@@ -44,7 +44,7 @@ namespace appbase {
          abstract_plugin& get_plugin( const string& name )const;
 
          template< typename Plugin >
-         auto& register_plugin() {
+         Plugin& register_plugin() {
             auto existing = find_plugin< Plugin >();
             if( existing )
                return *existing;
@@ -64,7 +64,7 @@ namespace appbase {
          Plugin& get_plugin()const {
             auto ptr = find_plugin< Plugin >();
              if( ptr == nullptr ) {
-                 BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find plugin: " + Plugin::name() ) );
+                 BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find plugin: " /*+ Plugin::name()*/ ) );
              }
             return *ptr;
          }
@@ -120,16 +120,16 @@ namespace appbase {
          virtual ~plugin() {}
 
          virtual state get_state()const override         { return _state; }
-         virtual const std::string& name()const override { return _name; }
+         virtual const std::string& name() const override { return _name; }
 
          virtual void register_dependencies() {
-            static_cast< Impl* >( this )->plugin_requires( [&]( auto& plug ){} );
+            static_cast< Impl* >( this )->plugin_requires( [&]( abstract_plugin& plug ){} );
          }
 
          virtual void initialize(const variables_map& options) override {
             if( _state == registered ) {
                _state = initialized;
-               static_cast< Impl* >( this )->plugin_requires( [&]( auto& plug ){ plug.initialize( options ); } );
+               static_cast< Impl* >( this )->plugin_requires( [&]( abstract_plugin& plug ){ plug.initialize( options ); } );
                static_cast< Impl* >( this )->plugin_initialize( options );
                // std::cout << "initializing plugin " << name() << std::endl;
                app().plugin_initialized( *this );
@@ -140,7 +140,7 @@ namespace appbase {
          virtual void startup() override {
             if( _state == initialized ) {
                _state = started;
-               static_cast< Impl* >( this )->plugin_requires( [&]( auto& plug ){ plug.startup(); } );
+               static_cast< Impl* >( this )->plugin_requires( [&]( abstract_plugin& plug ){ plug.startup(); } );
                static_cast< Impl* >( this )->plugin_startup();
                app().plugin_started( *this );
             }
@@ -157,6 +157,9 @@ namespace appbase {
 
       protected:
          plugin( const string& name ) : _name( name ) {}
+       void name(const std::string& name){
+           _name=name;
+       }
 
       private:
          state _state = abstract_plugin::registered;
