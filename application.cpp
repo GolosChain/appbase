@@ -81,8 +81,7 @@ void application::set_program_options()
    }
 }
 
-bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*> autostart_plugins)
-{
+bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*> autostart_plugins) {
    set_program_options();
 
    bpo::store( bpo::parse_command_line( argc, argv, my->_app_options ), my->_args );
