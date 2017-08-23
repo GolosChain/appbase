@@ -34,8 +34,9 @@ application::application()
 application::~application() { }
 
 void application::startup() {
-   for (auto plugin : initialized_plugins)
+   for (auto plugin : initialized_plugins) {
       plugin->startup();
+   }
 }
 
 application& application::instance( bool reset ) {

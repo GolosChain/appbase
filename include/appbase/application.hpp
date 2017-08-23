@@ -98,7 +98,7 @@ namespace appbase {
 
       private:
          application(); ///< private because application is a singlton that should be accessed via instance()
-         map< string, std::unique_ptr< abstract_plugin > >  plugins; ///< all registered plugins
+         map< string, std::shared_ptr< abstract_plugin > >  plugins; ///< all registered plugins
          vector< abstract_plugin* >                         initialized_plugins; ///< stored in the order they were started running
          vector< abstract_plugin* >                         running_plugins; ///< stored in the order they were started running
          std::shared_ptr< boost::asio::io_service >         io_serv;
