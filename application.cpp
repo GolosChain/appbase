@@ -26,8 +26,7 @@ class application_impl {
       bfs::path               _data_dir;
 };
 
-application::application()
-:my(new application_impl()){
+application::application() :my(new application_impl()){
    io_serv = std::make_shared<boost::asio::io_service>();
 }
 
@@ -41,8 +40,7 @@ void application::startup() {
 
 application& application::instance( bool reset ) {
    static application* _app = new application();
-   if( reset )
-   {
+   if( reset ) {
       delete _app;
       _app = new application();
    }
@@ -52,8 +50,7 @@ application& app() { return application::instance(); }
 application& reset() { return application::instance( true ); }
 
 
-void application::set_program_options()
-{
+void application::set_program_options() {
    options_description app_cfg_opts( "Application Config Options" );
    options_description app_cli_opts( "Application Command Line Options" );
    app_cfg_opts.add_options()
@@ -92,15 +89,13 @@ bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*
       return false;
    }
 
-   if( my->_args.count( "version" ) )
-   {
+   if( my->_args.count( "version" ) ) {
       cout << version_info << "\n";
       return false;
    }
 
    bfs::path data_dir = "data-dir";
-   if( my->_args.count("data-dir") )
-   {
+   if( my->_args.count("data-dir") ) {
       data_dir = my->_args["data-dir"].as<bfs::path>();
       if( data_dir.is_relative() )
          data_dir = bfs::current_path() / data_dir;
@@ -118,14 +113,15 @@ bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*
       write_default_config(config_file_name);
    }
 
-   bpo::store(bpo::parse_config_file< char >( config_file_name.make_preferred().string().c_str(),
-                                              my->_cfg_options, true ), my->_args );
+   bpo::store(bpo::parse_config_file< char >(
+           config_file_name.make_preferred().string().c_str(),
+           my->_cfg_options, true ),
+           my->_args
+   );
 
-   if(my->_args.count("plugin") > 0)
-   {
+   if(my->_args.count("plugin") > 0) {
       auto plugins = my->_args.at("plugin").as<std::vector<std::string>>();
-      for(auto& arg : plugins)
-      {
+      for(auto& arg : plugins) {
          vector<string> names;
          boost::split(names, arg, boost::is_any_of(" \t,"));
          for(const std::string& name : names)
@@ -182,8 +178,7 @@ void application::write_default_config(const bfs::path& cfg_file) {
       bfs::create_directories(cfg_file.parent_path());
 
    std::ofstream out_cfg( bfs::path(cfg_file).make_preferred().string());
-   for(const boost::shared_ptr<bpo::option_description> od : my->_cfg_options.options())
-   {
+   for(const boost::shared_ptr<bpo::option_description> od : my->_cfg_options.options()) {
       if(!od->description().empty())
          out_cfg << "# " << od->description() << "\n";
       boost::any store;
@@ -206,8 +201,7 @@ void application::write_default_config(const bfs::path& cfg_file) {
    out_cfg.close();
 }
 
-abstract_plugin* application::find_plugin(const string& name)const
-{
+abstract_plugin* application::find_plugin(const string& name)const {
    auto itr = plugins.find(name);
    if(itr == plugins.end()) {
       return nullptr;
@@ -222,20 +216,17 @@ abstract_plugin& application::get_plugin(const string& name)const {
    return *ptr;
 }
 
-bfs::path application::data_dir()const
-{
+bfs::path application::data_dir()const {
    return my->_data_dir;
 }
 
-void application::add_program_options( const options_description& cli, const options_description& cfg )
-{
+void application::add_program_options( const options_description& cli, const options_description& cfg ) {
    my->_app_options.add( cli );
    my->_app_options.add( cfg );
    my->_cfg_options.add( cfg );
 }
 
-const variables_map& application::get_args() const
-{
+const variables_map& application::get_args() const {
    return my->_args;
 }
 
