@@ -2,7 +2,10 @@
 project( AppBase )
 cmake_minimum_required( VERSION 2.8.12 )
 
-file(GLOB HEADERS "include/appbase/*.hpp")
+file(GLOB HEADERS
+        include/appbase/application.hpp
+        include/appbase/plugin.hpp
+)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS "ON")
 SET(BOOST_COMPONENTS)

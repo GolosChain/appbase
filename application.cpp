@@ -3,7 +3,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/asio/signal_set.hpp>
-
+#include <boost/thread/thread_pool.hpp>
 #include <iostream>
 #include <fstream>
 
@@ -22,9 +22,14 @@ namespace appbase {
         options_description     _app_options;
         options_description     _cfg_options;
         variables_map           _args;
-
+        boost::thread_group thread_pool;
         bfs::path               _data_dir;
     };
+
+
+    boost::thread_group& application::scheduler(){
+        return my->thread_pool;
+    }
 
     application::application() :my(new application_impl()){
        io_serv = std::make_shared<boost::asio::io_service>();
@@ -33,8 +38,9 @@ namespace appbase {
     application::~application() { }
 
     void application::startup() {
-       for (const auto& plugin : initialized_plugins)
+       for (const auto& plugin : initialized_plugins) {
           plugin->startup();
+       }
     }
 
     application& application::instance( bool reset ) {
@@ -119,8 +125,9 @@ namespace appbase {
              for(auto& arg : plugins) {
                 vector<string> names;
                 boost::split(names, arg, boost::is_any_of(" \t,"));
-                for(const std::string& name : names)
+                for(const std::string& name : names) {
                    get_plugin(name).initialize(my->_args);
+                }
              }
           }
           for (const auto& plugin : autostart_plugins) {

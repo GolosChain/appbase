@@ -4,6 +4,7 @@
 #include <boost/core/demangle.hpp>
 #include <boost/asio.hpp>
 #include <boost/throw_exception.hpp>
+#include <boost/thread/thread_pool.hpp>
 
 #include <iostream>
 
@@ -29,6 +30,8 @@ namespace appbase {
         bool initialize( int argc, char** argv ) {
             return initialize_impl( argc, argv, { find_plugin( Plugin::name() )... } );
         }
+
+        boost::thread_group& scheduler();
 
         void startup();
         void shutdown();
@@ -58,8 +61,7 @@ namespace appbase {
             Plugin* plugin = dynamic_cast< Plugin* >( find_plugin( Plugin::name() ) );
 
             // Do not return plugins that are registered but not at least initialized.
-            if( plugin != nullptr && plugin->get_state() == abstract_plugin::registered )
-            {
+            if( plugin != nullptr && plugin->get_state() == abstract_plugin::registered ) {
                 return nullptr;
             }
 
