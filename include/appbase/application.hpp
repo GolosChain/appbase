@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <boost/throw_exception.hpp>
 #include <boost/thread/thread_pool.hpp>
+#include <boost/thread/thread.hpp>
 
 #include <iostream>
 
