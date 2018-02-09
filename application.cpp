@@ -10,20 +10,45 @@
 namespace appbase {
 
     namespace bpo = boost::program_options;
+    namespace asio = boost::asio;
+    using boost::asio::ip::tcp;
     using bpo::options_description;
     using bpo::variables_map;
     using std::cout;
 
-    class application_impl {
+    class impl {
     public:
-        application_impl():_app_options("Application Options"){
+        impl():_app_options("Application Options"){
+           io_serv.reset(new asio::io_service());
         }
-        const variables_map*    _options = nullptr;
-        options_description     _app_options;
-        options_description     _cfg_options;
-        variables_map           _args;
-        boost::thread_group thread_pool;
-        bfs::path               _data_dir;
+
+        std::vector<tcp::endpoint> resolve( const std::string& host, uint16_t port ) {
+           tcp::resolver res( *io_serv );
+
+           tcp::resolver::iterator it = res.resolve( tcp::resolver::query(host, std::to_string(uint64_t(port))) );
+           tcp::resolver::iterator et;
+
+           std::vector<tcp::endpoint> eps;
+           for (; et != it; ++it) {
+              if( it->endpoint().address().is_v4()) {
+                 eps.push_back( it->endpoint() );
+              }
+           }
+           return eps;
+        }
+
+        map< string, std::shared_ptr< abstract_plugin > >  plugins; ///< all registered plugins
+        vector< abstract_plugin* >                         initialized_plugins; ///< stored in the order they were started running
+        vector< abstract_plugin* >                         running_plugins; ///< stored in the order they were started running
+        std::unique_ptr< asio::io_service >                io_serv;
+        std::string                                        version_info;
+
+        const variables_map*                               _options = nullptr;
+        options_description                                _app_options;
+        options_description                                _cfg_options;
+        variables_map                                      _args;
+        boost::thread_group                                thread_pool;
+        bfs::path                                          _data_dir;
     };
 
 
@@ -31,14 +56,33 @@ namespace appbase {
         return my->thread_pool;
     }
 
-    application::application() :my(new application_impl()){
-       io_serv = std::make_shared<boost::asio::io_service>();
+    boost::asio::io_service& application::get_io_service() {
+        return *my->io_serv;
+    }
+
+    void application::plugin_initialized( abstract_plugin& plug ) {
+        my->initialized_plugins.push_back( &plug );
+    }
+
+    void application::plugin_started( abstract_plugin& plug ) {
+        my->running_plugins.push_back( &plug );
+    }
+
+    void application::register_plugin(const std::string& name, std::shared_ptr<abstract_plugin> plug) {
+        my->plugins[name] = plug;
+    }
+
+    void application::set_version_string( const string& version ) {
+       my->version_info = version;
+    }
+
+    application::application() :my(new impl()){
     }
 
     application::~application() { }
 
     void application::startup() {
-       for (const auto& plugin : initialized_plugins) {
+       for (const auto& plugin : my->initialized_plugins) {
           plugin->startup();
        }
     }
@@ -71,7 +115,7 @@ namespace appbase {
        my->_app_options.add(app_cfg_opts);
        my->_app_options.add(app_cli_opts);
 
-       for(auto& plug : plugins) {
+       for(auto& plug : my->plugins) {
           boost::program_options::options_description plugin_cli_opts("Command Line Options for " + plug.second->get_name());
           boost::program_options::options_description plugin_cfg_opts("Config Options for " + plug.second->get_name());
           plug.second->set_program_options(plugin_cli_opts, plugin_cfg_opts);
@@ -95,7 +139,7 @@ namespace appbase {
           }
 
           if( my->_args.count( "version" ) ) {
-             cout << version_info << "\n";
+             cout << my->version_info << "\n";
              return false;
           }
 
@@ -146,37 +190,37 @@ namespace appbase {
     }
 
     void application::shutdown() {
-       for(auto ritr = running_plugins.rbegin();
-           ritr != running_plugins.rend(); ++ritr) {
+       for(auto ritr = my->running_plugins.rbegin();
+           ritr != my->running_plugins.rend(); ++ritr) {
           (*ritr)->shutdown();
        }
-       for(auto ritr = running_plugins.rbegin();
-           ritr != running_plugins.rend(); ++ritr) {
-          plugins.erase((*ritr)->get_name());
+       for(auto ritr = my->running_plugins.rbegin();
+           ritr != my->running_plugins.rend(); ++ritr) {
+          my->plugins.erase((*ritr)->get_name());
        }
-       running_plugins.clear();
-       initialized_plugins.clear();
-       plugins.clear();
+       my->running_plugins.clear();
+       my->initialized_plugins.clear();
+       my->plugins.clear();
     }
 
     void application::quit() {
-       io_serv->stop();
+       my->io_serv->stop();
     }
 
     void application::exec() {
-       std::shared_ptr<boost::asio::signal_set> sigint_set(new boost::asio::signal_set(*io_serv, SIGINT));
+       std::shared_ptr<boost::asio::signal_set> sigint_set(new boost::asio::signal_set(*my->io_serv, SIGINT));
        sigint_set->async_wait([sigint_set,this](const boost::system::error_code& err, int num) {
            quit();
            sigint_set->cancel();
        });
 
-       std::shared_ptr<boost::asio::signal_set> sigterm_set(new boost::asio::signal_set(*io_serv, SIGTERM));
+       std::shared_ptr<boost::asio::signal_set> sigterm_set(new boost::asio::signal_set(*my->io_serv, SIGTERM));
        sigterm_set->async_wait([sigterm_set,this](const boost::system::error_code& err, int num) {
            quit();
            sigterm_set->cancel();
        });
 
-       io_serv->run();
+       my->io_serv->run();
 
        shutdown(); /// perform synchronous shutdown
     }
@@ -210,9 +254,9 @@ namespace appbase {
     }
 
     abstract_plugin* application::find_plugin( const string& name )const {
-       auto itr = plugins.find( name );
+       auto itr = my->plugins.find( name );
 
-       if( itr == plugins.end() ) {
+       if( itr == my->plugins.end() ) {
           return nullptr;
        }
 
@@ -240,4 +284,24 @@ namespace appbase {
        return my->_args;
     }
 
+    std::vector<tcp::endpoint> application::resolve_string_to_ip_endpoints(const std::string &endpoint_string) {
+       string::size_type colon_pos = endpoint_string.find(':');
+       if (colon_pos == std::string::npos)
+          BOOST_THROW_EXCEPTION(std::runtime_error("Missing required port number in endpoint string \"" + endpoint_string + "\""));
+
+       std::string port_string = endpoint_string.substr(colon_pos + 1);
+
+       try {
+          uint16_t port = boost::lexical_cast<uint16_t>(port_string);
+          std::string hostname = endpoint_string.substr(0, colon_pos);
+          auto endpoints = my->resolve(hostname, port);
+
+          if (endpoints.empty())
+             BOOST_THROW_EXCEPTION(std::runtime_error("The host name can not be resolved: " + hostname));
+
+          return endpoints;
+       } catch (const boost::bad_lexical_cast &) {
+          BOOST_THROW_EXCEPTION(std::runtime_error("Bad port: " + port_string));
+       }
+    }
 } /// namespace appbase
