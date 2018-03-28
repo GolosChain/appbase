@@ -143,21 +143,14 @@ namespace appbase {
                 return false;
             }
 
-            bfs::path data_dir = "data-dir";
-            if (my->_args.count("data-dir")) {
-                data_dir = my->_args["data-dir"].as<bfs::path>();
-                if (data_dir.is_relative())
-                    data_dir = bfs::current_path() / data_dir;
-            }
+            bfs::path data_dir = my->_args["data-dir"].as<bfs::path>();
+            if (data_dir.is_relative())
+                data_dir = bfs::current_path() / data_dir;
             my->_data_dir = data_dir;
 
-            bfs::path config_file_name = data_dir / "config.ini";
-            if (my->_args.count("config")) {
-                config_file_name = my->_args["config"].as<bfs::path>();
-                if (config_file_name.is_relative())
-                    config_file_name = data_dir / config_file_name;
-            }
-
+            bfs::path config_file_name = my->_args["config"].as<bfs::path>();
+            if (config_file_name.is_relative())
+                config_file_name = data_dir / config_file_name;
             if (!bfs::exists(config_file_name)) {
                 write_default_config(config_file_name);
             }
