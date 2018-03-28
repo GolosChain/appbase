@@ -153,7 +153,7 @@ namespace appbase {
 
             bfs::path config_file_name = data_dir / "config.ini";
             if (my->_args.count("config")) {
-                auto config_file_name = my->_args["config"].as<bfs::path>();
+                config_file_name = my->_args["config"].as<bfs::path>();
                 if (config_file_name.is_relative())
                     config_file_name = data_dir / config_file_name;
             }
