@@ -46,6 +46,7 @@ namespace appbase {
         const variables_map*                               _options = nullptr;
         options_description                                _app_options;
         options_description                                _cfg_options;
+        bfs::path                                          _cfg_path;
         variables_map                                      _args;
         boost::thread_group                                thread_pool;
         bfs::path                                          _data_dir;
@@ -155,7 +156,8 @@ namespace appbase {
                 write_default_config(config_file_name);
             }
 
-            bpo::store(bpo::parse_config_file< char >( config_file_name.make_preferred().string().c_str(), my->_cfg_options, true ), my->_args );
+            my->_cfg_path = config_file_name.make_preferred();
+            bpo::store(bpo::parse_config_file<char>(my->_cfg_path.string().c_str(), my->_cfg_options, true), my->_args);
 
             if (my->_args.count("plugin") > 0) {
                 auto plugins = my->_args.at("plugin").as<std::vector<std::string>>();
@@ -290,8 +292,11 @@ namespace appbase {
         return *ptr;
     }
 
-    bfs::path application::data_dir()const {
+    bfs::path application::data_dir() const {
         return my->_data_dir;
+    }
+    const bfs::path& application::config_path() const {
+        return my->_cfg_path;
     }
 
     void application::add_program_options( const options_description& cli, const options_description& cfg ) {
