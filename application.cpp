@@ -222,27 +222,54 @@ namespace appbase {
         if (!bfs::exists(cfg_file.parent_path()))
             bfs::create_directories(cfg_file.parent_path());
 
-        std::ofstream out_cfg( bfs::path(cfg_file).make_preferred().string());
+        std::ofstream out_cfg(bfs::path(cfg_file).make_preferred().string());
+        std::stringstream delayed;  // delay sections (should be printed after normal options)
+        string cur_section = "";
+
         for (const boost::shared_ptr<bpo::option_description> od : my->_cfg_options.options()) {
+            std::stringstream out;
+
             if (!od->description().empty())
-                out_cfg << "# " << od->description() << "\n";
+                out << "# " << od->description() << "\n";
+
+            auto name = od->long_name();
+            auto pos = name.rfind('.');
+            auto new_section = false;
+            auto is_section = pos != std::string::npos;
+            if (is_section) {
+                auto section = name.substr(0, pos);
+                name.erase(0, pos + 1);
+                new_section = cur_section.compare(section) != 0;
+                if (new_section) {
+                    cur_section = section;
+                    out << "[" << section << "]\n";
+                }
+            }
+
             boost::any store;
-            if (!od->semantic()->apply_default(store))
-                out_cfg << "# " << od->long_name() << " = \n";
-            else {
+            if (name.length() == 0) {
+                // It's section description, skip value output
+            } else if (!od->semantic()->apply_default(store)) {
+                out << "# " << name << " = \n";
+            } else {
                 auto example = od->format_parameter();
                 if (example.empty())
                     // This is a boolean switch
-                    out_cfg << od->long_name() << " = " << "false\n";
+                    out << name << " = " << "false\n";
                 else {
                     // The string is formatted "arg (=<interesting part>)"
                     example.erase(0, 6);
                     example.erase(example.length()-1);
-                    out_cfg << od->long_name() << " = " << example << "\n";
+                    out << name << " = " << example << "\n";
                 }
             }
-            out_cfg << "\n";
+
+            if (is_section)
+                delayed << (new_section ? "\n" : "") << out.str();
+            else
+                out_cfg << "\n" << out.str();
         }
+        out_cfg << delayed.str() << "\n";
         out_cfg.close();
     }
 
