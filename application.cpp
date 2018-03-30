@@ -18,7 +18,7 @@ namespace appbase {
 
     class impl {
     public:
-        impl():_app_options("Application Options"){
+        impl():_cli_options("Application Options"){
             io_serv.reset(new asio::io_service());
         }
 
@@ -44,7 +44,7 @@ namespace appbase {
         std::string                                        version_info;
 
         const variables_map*                               _options = nullptr;
-        options_description                                _app_options;
+        options_description                                _cli_options;
         options_description                                _cfg_options;
         bfs::path                                          _cfg_path;
         variables_map                                      _args;
@@ -112,30 +112,30 @@ namespace appbase {
                 ("data-dir,d", bpo::value<bfs::path>()->default_value( "witness_node_data_dir" ), "Directory containing configuration file config.ini")
                 ("config,c", bpo::value<bfs::path>()->default_value( "config.ini" ), "Configuration file name relative to data-dir");
 
+        my->_cli_options.add(app_cli_opts);
+        my->_cli_options.add(app_cfg_opts); // is it needed to show "--plugin" in --help?
         my->_cfg_options.add(app_cfg_opts);
-        my->_app_options.add(app_cfg_opts);
-        my->_app_options.add(app_cli_opts);
 
         for (auto& plug : my->plugins) {
-            boost::program_options::options_description plugin_cli_opts("Command Line Options for " + plug.second->get_name());
-            boost::program_options::options_description plugin_cfg_opts("Config Options for " + plug.second->get_name());
-            plug.second->set_program_options(plugin_cli_opts, plugin_cfg_opts);
-            if (plugin_cfg_opts.options().size()) {
-                my->_app_options.add(plugin_cfg_opts);
-                my->_cfg_options.add(plugin_cfg_opts);
-            }
-            if (plugin_cli_opts.options().size())
-                my->_app_options.add(plugin_cli_opts);
+            boost::program_options::options_description cli("Command Line Options for " + plug.second->get_name());
+            boost::program_options::options_description cfg("Config Options for " + plug.second->get_name());
+            plug.second->set_program_options(cli, cfg);
+            if (cfg.options().size())
+                my->_cfg_options.add(cfg);
+            if (cli.options().size())
+                my->_cli_options.add(cli);
         }
     }
 
     bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*> autostart_plugins) {
         try {
             set_program_options();
-            bpo::store( bpo::parse_command_line( argc, argv, my->_app_options ), my->_args );
+            bpo::options_description all_options;
+            all_options.add(my->_cli_options).add(my->_cfg_options);
+            bpo::store(bpo::parse_command_line(argc, argv, all_options), my->_args);
 
             if (my->_args.count("help")) {
-                cout << my->_app_options << "\n";
+                cout << my->_cli_options << "\n";
                 return false;
             }
 
@@ -299,10 +299,9 @@ namespace appbase {
         return my->_cfg_path;
     }
 
-    void application::add_program_options( const options_description& cli, const options_description& cfg ) {
-        my->_app_options.add( cli );
-        my->_app_options.add( cfg );
-        my->_cfg_options.add( cfg );
+    void application::add_program_options(const options_description& cli, const options_description& cfg) {
+        my->_cli_options.add(cli);
+        my->_cfg_options.add(cfg);
     }
 
     const variables_map& application::get_args() const {
