@@ -18,23 +18,23 @@ namespace appbase {
 
     class impl {
     public:
-        impl():_app_options("Application Options"){
-           io_serv.reset(new asio::io_service());
+        impl():_cli_options("Application Options"){
+            io_serv.reset(new asio::io_service());
         }
 
         std::vector<tcp::endpoint> resolve( const std::string& host, uint16_t port ) {
-           tcp::resolver res( *io_serv );
+            tcp::resolver res( *io_serv );
 
-           tcp::resolver::iterator it = res.resolve( tcp::resolver::query(host, std::to_string(uint64_t(port))) );
-           tcp::resolver::iterator et;
+            tcp::resolver::iterator it = res.resolve( tcp::resolver::query(host, std::to_string(uint64_t(port))) );
+            tcp::resolver::iterator et;
 
-           std::vector<tcp::endpoint> eps;
-           for (; et != it; ++it) {
-              if( it->endpoint().address().is_v4()) {
-                 eps.push_back( it->endpoint() );
-              }
-           }
-           return eps;
+            std::vector<tcp::endpoint> eps;
+            for (; et != it; ++it) {
+                if (it->endpoint().address().is_v4()) {
+                    eps.push_back( it->endpoint() );
+                }
+            }
+            return eps;
         }
 
         map< string, std::shared_ptr< abstract_plugin > >  plugins; ///< all registered plugins
@@ -44,8 +44,9 @@ namespace appbase {
         std::string                                        version_info;
 
         const variables_map*                               _options = nullptr;
-        options_description                                _app_options;
+        options_description                                _cli_options;
         options_description                                _cfg_options;
+        bfs::path                                          _cfg_path;
         variables_map                                      _args;
         boost::thread_group                                thread_pool;
         bfs::path                                          _data_dir;
@@ -73,7 +74,7 @@ namespace appbase {
     }
 
     void application::set_version_string( const string& version ) {
-       my->version_info = version;
+        my->version_info = version;
     }
 
     application::application() :my(new impl()){
@@ -82,18 +83,18 @@ namespace appbase {
     application::~application() { }
 
     void application::startup() {
-       for (const auto& plugin : my->initialized_plugins) {
-          plugin->startup();
-       }
+        for (const auto& plugin : my->initialized_plugins) {
+            plugin->startup();
+        }
     }
 
     application& application::instance( bool reset ) {
-       static application* _app = new application();
-       if( reset ) {
-          delete _app;
-          _app = new application();
-       }
-       return *_app;
+        static application* _app = new application();
+        if (reset) {
+            delete _app;
+            _app = new application();
+        }
+        return *_app;
     }
     application& app() { return application::instance(); }
     application& reset() { return application::instance( true ); }
@@ -106,202 +107,225 @@ namespace appbase {
                ("plugin", bpo::value< vector<string> >()->composing(), "Plugin(s) to enable, may be specified multiple times");
 
        app_cli_opts.add_options()
-               ("help,h", "Print this help message and exit.")
-               ("version,v", "Print version information.")
-               ("data-dir,d", bpo::value<bfs::path>()->default_value( "witness_node_data_dir" ), "Directory containing configuration file config.ini")
-               ("config,c", bpo::value<bfs::path>()->default_value( "config.ini" ), "Configuration file name relative to data-dir");
+                ("help,h", "Print this help message and exit.")
+                ("version,v", "Print version information.")
+                ("data-dir,d", bpo::value<bfs::path>()->default_value( "witness_node_data_dir" ), "Directory containing configuration file config.ini")
+                ("config,c", bpo::value<bfs::path>()->default_value( "config.ini" ), "Configuration file name relative to data-dir");
 
-       my->_cfg_options.add(app_cfg_opts);
-       my->_app_options.add(app_cfg_opts);
-       my->_app_options.add(app_cli_opts);
+        my->_cli_options.add(app_cli_opts);
+        my->_cli_options.add(app_cfg_opts); // is it needed to show "--plugin" in --help?
+        my->_cfg_options.add(app_cfg_opts);
 
-       for(auto& plug : my->plugins) {
-          boost::program_options::options_description plugin_cli_opts("Command Line Options for " + plug.second->get_name());
-          boost::program_options::options_description plugin_cfg_opts("Config Options for " + plug.second->get_name());
-          plug.second->set_program_options(plugin_cli_opts, plugin_cfg_opts);
-          if(plugin_cfg_opts.options().size()) {
-             my->_app_options.add(plugin_cfg_opts);
-             my->_cfg_options.add(plugin_cfg_opts);
-          }
-          if(plugin_cli_opts.options().size())
-             my->_app_options.add(plugin_cli_opts);
-       }
+        for (auto& plug : my->plugins) {
+            boost::program_options::options_description cli("Command Line Options for " + plug.second->get_name());
+            boost::program_options::options_description cfg("Config Options for " + plug.second->get_name());
+            plug.second->set_program_options(cli, cfg);
+            if (cfg.options().size())
+                my->_cfg_options.add(cfg);
+            if (cli.options().size())
+                my->_cli_options.add(cli);
+        }
     }
 
     bool application::initialize_impl(int argc, char** argv, vector<abstract_plugin*> autostart_plugins) {
-       try {
-          set_program_options();
-          bpo::store( bpo::parse_command_line( argc, argv, my->_app_options ), my->_args );
+        try {
+            set_program_options();
+            bpo::options_description all_options;
+            all_options.add(my->_cli_options).add(my->_cfg_options);
+            bpo::store(bpo::parse_command_line(argc, argv, all_options), my->_args);
 
-          if( my->_args.count( "help" ) ) {
-             cout << my->_app_options << "\n";
-             return false;
-          }
+            if (my->_args.count("help")) {
+                cout << my->_cli_options << "\n";
+                return false;
+            }
 
-          if( my->_args.count( "version" ) ) {
-             cout << my->version_info << "\n";
-             return false;
-          }
+            if (my->_args.count("version")) {
+                cout << my->version_info << "\n";
+                return false;
+            }
 
-          bfs::path data_dir = "data-dir";
-          if( my->_args.count("data-dir") ) {
-             data_dir = my->_args["data-dir"].as<bfs::path>();
-             if( data_dir.is_relative() )
+            bfs::path data_dir = my->_args["data-dir"].as<bfs::path>();
+            if (data_dir.is_relative())
                 data_dir = bfs::current_path() / data_dir;
-          }
-          my->_data_dir = data_dir;
+            my->_data_dir = data_dir;
 
-          bfs::path config_file_name = data_dir / "config.ini";
-          if( my->_args.count( "config" ) ) {
-             auto config_file_name = my->_args["config"].as<bfs::path>();
-             if( config_file_name.is_relative() )
+            bfs::path config_file_name = my->_args["config"].as<bfs::path>();
+            if (config_file_name.is_relative())
                 config_file_name = data_dir / config_file_name;
-          }
+            if (!bfs::exists(config_file_name)) {
+                write_default_config(config_file_name);
+            }
 
-          if(!bfs::exists(config_file_name)) {
-             write_default_config(config_file_name);
-          }
+            my->_cfg_path = config_file_name.make_preferred();
+            bpo::store(bpo::parse_config_file<char>(my->_cfg_path.string().c_str(), my->_cfg_options, true), my->_args);
 
-          bpo::store(bpo::parse_config_file< char >( config_file_name.make_preferred().string().c_str(), my->_cfg_options, true ), my->_args );
-
-          if(my->_args.count("plugin") > 0) {
-             auto plugins = my->_args.at("plugin").as<std::vector<std::string>>();
-             for(auto& arg : plugins) {
-                vector<string> names;
-                boost::split(names, arg, boost::is_any_of(" \t,"));
-                for(const std::string& name : names) {
-                   get_plugin(name).initialize(my->_args);
+            if (my->_args.count("plugin") > 0) {
+                auto plugins = my->_args.at("plugin").as<std::vector<std::string>>();
+                for (auto& arg : plugins) {
+                    vector<string> names;
+                    boost::split(names, arg, boost::is_any_of(" \t,"));
+                    for(const std::string& name : names) {
+                        get_plugin(name).initialize(my->_args);
+                    }
                 }
-             }
-          }
-          for (const auto& plugin : autostart_plugins) {
-             if (plugin != nullptr && plugin->get_state() == abstract_plugin::registered) {
-                plugin->initialize(my->_args);
-             }
-          }
-          bpo::notify(my->_args);
+            }
+            for (const auto& plugin : autostart_plugins) {
+                if (plugin != nullptr && plugin->get_state() == abstract_plugin::registered) {
+                    plugin->initialize(my->_args);
+                }
+            }
+            bpo::notify(my->_args);
 
-          return true;
-       }
-       catch (const boost::program_options::error& e) {
-          std::cerr << "Error parsing command line: " << e.what() << "\n";
-          return false;
-       }
+            return true;
+        }
+        catch (const boost::program_options::error& e) {
+            std::cerr << "Error parsing command line: " << e.what() << "\n";
+            return false;
+        }
     }
 
     void application::shutdown() {
-       for(auto ritr = my->running_plugins.rbegin();
-           ritr != my->running_plugins.rend(); ++ritr) {
-          (*ritr)->shutdown();
-       }
-       for(auto ritr = my->running_plugins.rbegin();
-           ritr != my->running_plugins.rend(); ++ritr) {
-          my->plugins.erase((*ritr)->get_name());
-       }
-       my->running_plugins.clear();
-       my->initialized_plugins.clear();
-       my->plugins.clear();
+        for (auto ritr = my->running_plugins.rbegin();
+            ritr != my->running_plugins.rend(); ++ritr) {
+            (*ritr)->shutdown();
+        }
+        for (auto ritr = my->running_plugins.rbegin();
+            ritr != my->running_plugins.rend(); ++ritr) {
+            my->plugins.erase((*ritr)->get_name());
+        }
+        my->running_plugins.clear();
+        my->initialized_plugins.clear();
+        my->plugins.clear();
     }
 
     void application::quit() {
-       my->io_serv->stop();
+        my->io_serv->stop();
     }
 
     void application::exec() {
-       std::shared_ptr<boost::asio::signal_set> sigint_set(new boost::asio::signal_set(*my->io_serv, SIGINT));
-       sigint_set->async_wait([sigint_set,this](const boost::system::error_code& err, int num) {
-           quit();
-           sigint_set->cancel();
-       });
+        std::shared_ptr<boost::asio::signal_set> sigint_set(new boost::asio::signal_set(*my->io_serv, SIGINT));
+        sigint_set->async_wait([sigint_set,this](const boost::system::error_code& err, int num) {
+            quit();
+            sigint_set->cancel();
+        });
 
-       std::shared_ptr<boost::asio::signal_set> sigterm_set(new boost::asio::signal_set(*my->io_serv, SIGTERM));
-       sigterm_set->async_wait([sigterm_set,this](const boost::system::error_code& err, int num) {
-           quit();
-           sigterm_set->cancel();
-       });
+        std::shared_ptr<boost::asio::signal_set> sigterm_set(new boost::asio::signal_set(*my->io_serv, SIGTERM));
+        sigterm_set->async_wait([sigterm_set,this](const boost::system::error_code& err, int num) {
+            quit();
+            sigterm_set->cancel();
+        });
 
-       my->io_serv->run();
+        my->io_serv->run();
 
-       shutdown(); /// perform synchronous shutdown
+        shutdown(); /// perform synchronous shutdown
     }
 
     void application::write_default_config(const bfs::path& cfg_file) {
-       if(!bfs::exists(cfg_file.parent_path()))
-          bfs::create_directories(cfg_file.parent_path());
+        if (!bfs::exists(cfg_file.parent_path()))
+            bfs::create_directories(cfg_file.parent_path());
 
-       std::ofstream out_cfg( bfs::path(cfg_file).make_preferred().string());
-       for(const boost::shared_ptr<bpo::option_description> od : my->_cfg_options.options()) {
-          if(!od->description().empty())
-             out_cfg << "# " << od->description() << "\n";
-          boost::any store;
-          if(!od->semantic()->apply_default(store))
-             out_cfg << "# " << od->long_name() << " = \n";
-          else {
-             auto example = od->format_parameter();
-             if(example.empty())
-                // This is a boolean switch
-                out_cfg << od->long_name() << " = " << "false\n";
-             else {
-                // The string is formatted "arg (=<interesting part>)"
-                example.erase(0, 6);
-                example.erase(example.length()-1);
-                out_cfg << od->long_name() << " = " << example << "\n";
-             }
-          }
-          out_cfg << "\n";
-       }
-       out_cfg.close();
+        std::ofstream out_cfg(bfs::path(cfg_file).make_preferred().string());
+        std::stringstream delayed;  // delay sections (should be printed after normal options)
+        string cur_section = "";
+
+        for (const boost::shared_ptr<bpo::option_description> od : my->_cfg_options.options()) {
+            std::stringstream out;
+
+            if (!od->description().empty())
+                out << "# " << od->description() << "\n";
+
+            auto name = od->long_name();
+            auto pos = name.rfind('.');
+            auto new_section = false;
+            auto is_section = pos != std::string::npos;
+            if (is_section) {
+                auto section = name.substr(0, pos);
+                name.erase(0, pos + 1);
+                new_section = cur_section.compare(section) != 0;
+                if (new_section) {
+                    cur_section = section;
+                    out << "[" << section << "]\n";
+                }
+            }
+
+            boost::any store;
+            if (name.length() == 0) {
+                // It's section description, skip value output
+            } else if (!od->semantic()->apply_default(store)) {
+                out << "# " << name << " = \n";
+            } else {
+                auto example = od->format_parameter();
+                if (example.empty())
+                    // This is a boolean switch
+                    out << name << " = " << "false\n";
+                else {
+                    // The string is formatted "arg (=<interesting part>)"
+                    example.erase(0, 6);
+                    example.erase(example.length()-1);
+                    out << name << " = " << example << "\n";
+                }
+            }
+
+            if (is_section)
+                delayed << (new_section ? "\n" : "") << out.str();
+            else
+                out_cfg << "\n" << out.str();
+        }
+        out_cfg << delayed.str() << "\n";
+        out_cfg.close();
     }
 
     abstract_plugin* application::find_plugin( const string& name )const {
-       auto itr = my->plugins.find( name );
+        auto itr = my->plugins.find( name );
 
-       if( itr == my->plugins.end() ) {
-          return nullptr;
-       }
+        if (itr == my->plugins.end()) {
+            return nullptr;
+        }
 
-       return itr->second.get();
+        return itr->second.get();
     }
 
     abstract_plugin& application::get_plugin(const string& name)const {
-       auto ptr = find_plugin(name);
-       if(!ptr)
-          BOOST_THROW_EXCEPTION(std::runtime_error("unable to find plugin: " + name));
-       return *ptr;
+        auto ptr = find_plugin(name);
+        if (!ptr)
+            BOOST_THROW_EXCEPTION(std::runtime_error("unable to find plugin: " + name));
+        return *ptr;
     }
 
-    bfs::path application::data_dir()const {
-       return my->_data_dir;
+    bfs::path application::data_dir() const {
+        return my->_data_dir;
+    }
+    const bfs::path& application::config_path() const {
+        return my->_cfg_path;
     }
 
-    void application::add_program_options( const options_description& cli, const options_description& cfg ) {
-       my->_app_options.add( cli );
-       my->_app_options.add( cfg );
-       my->_cfg_options.add( cfg );
+    void application::add_program_options(const options_description& cli, const options_description& cfg) {
+        my->_cli_options.add(cli);
+        my->_cfg_options.add(cfg);
     }
 
     const variables_map& application::get_args() const {
-       return my->_args;
+        return my->_args;
     }
 
     std::vector<tcp::endpoint> application::resolve_string_to_ip_endpoints(const std::string &endpoint_string) {
-       string::size_type colon_pos = endpoint_string.find(':');
-       if (colon_pos == std::string::npos)
-          BOOST_THROW_EXCEPTION(std::runtime_error("Missing required port number in endpoint string \"" + endpoint_string + "\""));
+        string::size_type colon_pos = endpoint_string.find(':');
+        if (colon_pos == std::string::npos)
+            BOOST_THROW_EXCEPTION(std::runtime_error("Missing required port number in endpoint string \"" + endpoint_string + "\""));
 
-       std::string port_string = endpoint_string.substr(colon_pos + 1);
+        std::string port_string = endpoint_string.substr(colon_pos + 1);
 
-       try {
-          uint16_t port = boost::lexical_cast<uint16_t>(port_string);
-          std::string hostname = endpoint_string.substr(0, colon_pos);
-          auto endpoints = my->resolve(hostname, port);
+        try {
+            uint16_t port = boost::lexical_cast<uint16_t>(port_string);
+            std::string hostname = endpoint_string.substr(0, colon_pos);
+            auto endpoints = my->resolve(hostname, port);
 
-          if (endpoints.empty())
-             BOOST_THROW_EXCEPTION(std::runtime_error("The host name can not be resolved: " + hostname));
+            if (endpoints.empty())
+                BOOST_THROW_EXCEPTION(std::runtime_error("The host name can not be resolved: " + hostname));
 
-          return endpoints;
-       } catch (const boost::bad_lexical_cast &) {
-          BOOST_THROW_EXCEPTION(std::runtime_error("Bad port: " + port_string));
-       }
+            return endpoints;
+        } catch (const boost::bad_lexical_cast &) {
+            BOOST_THROW_EXCEPTION(std::runtime_error("Bad port: " + port_string));
+        }
     }
 } /// namespace appbase

@@ -77,7 +77,8 @@ namespace appbase {
             return *ptr;
         }
 
-        bfs::path data_dir()const;
+        bfs::path data_dir() const;
+        const bfs::path& config_path() const;
 
         void add_program_options( const bpo::options_description& cli, const bpo::options_description& cfg );
         const bpo::variables_map& get_args() const;
