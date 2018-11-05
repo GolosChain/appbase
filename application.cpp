@@ -22,7 +22,7 @@ namespace appbase {
             io_serv.reset(new asio::io_service());
         }
 
-        std::vector<tcp::endpoint> resolve( const std::string& host, uint16_t port ) {
+        std::vector<tcp::endpoint> resolve( const std::string& host, uint16_t port ) { try {
             tcp::resolver res( *io_serv );
 
             tcp::resolver::iterator it = res.resolve( tcp::resolver::query(host, std::to_string(uint64_t(port))) );
@@ -35,7 +35,10 @@ namespace appbase {
                 }
             }
             return eps;
-        }
+        } catch(const std::exception& e) {
+            std::cerr << "Fail to resolve " << host << ":" << port <<", " << e.what() << "\n";
+            return {};
+        } }
 
         map< string, std::shared_ptr< abstract_plugin > >  plugins; ///< all registered plugins
         vector< abstract_plugin* >                         initialized_plugins; ///< stored in the order they were started running
@@ -318,12 +321,7 @@ namespace appbase {
         try {
             uint16_t port = boost::lexical_cast<uint16_t>(port_string);
             std::string hostname = endpoint_string.substr(0, colon_pos);
-            auto endpoints = my->resolve(hostname, port);
-
-            if (endpoints.empty())
-                BOOST_THROW_EXCEPTION(std::runtime_error("The host name can not be resolved: " + hostname));
-
-            return endpoints;
+            return my->resolve(hostname, port);
         } catch (const boost::bad_lexical_cast &) {
             BOOST_THROW_EXCEPTION(std::runtime_error("Bad port: " + port_string));
         }
